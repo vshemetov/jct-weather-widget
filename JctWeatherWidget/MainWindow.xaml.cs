@@ -19,7 +19,7 @@ namespace JctWeatherWidget
         public MainWindow()
         {
             InitializeComponent();
-            _weatherService = new JctWeatherService();
+            _weatherService = (App.Current as App).GetService<JctWeatherService>();
         }
 
         private async void Window_Loaded(object sender, RoutedEventArgs e)

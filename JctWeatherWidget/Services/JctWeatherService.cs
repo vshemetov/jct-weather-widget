@@ -7,19 +7,12 @@ using System.Text.Json;
 
 namespace JctWeatherWidget.Services
 {
-    public class JctWeatherService
+    public class JctWeatherService(HttpClient client)
     {
-        private readonly HttpClient _client;
-        private static readonly string ApiKey = LoadApiKey();
+        private static readonly string ApiKey = ReadApiKey();
 
         private const string BaseUrl = "https://api.weatherapi.com/v1/forecast.json";
         private const byte DaysAmount = 1;
-
-        public JctWeatherService()
-        {
-            _client = new HttpClient();
-            _client.DefaultRequestHeaders.UserAgent.ParseAdd("JctWeatherWidget/1.0");
-        }
 
         public async Task<JctWeatherData> GetWeatherFromCoordinatesAsync(double lat, double lon, CancellationToken ct = default)
         {
@@ -29,7 +22,7 @@ namespace JctWeatherWidget.Services
 
             try
             {
-                var response = await _client.GetAsync(url, ct);
+                var response = await client.GetAsync(url, ct);
                 if (!response.IsSuccessStatusCode)
                 {
                     var errorText = await response.Content.ReadAsStringAsync(ct);
@@ -74,7 +67,7 @@ namespace JctWeatherWidget.Services
             }
         }
 
-        private static string LoadApiKey(string filePath = "api.key")
+        private static string ReadApiKey(string filePath = "api.key")
         {
             if (!File.Exists(filePath))
                 throw new InvalidOperationException($"Файл с API-ключом не найден: {Path.GetFullPath(filePath)}\n" +
