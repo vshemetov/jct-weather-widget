@@ -13,7 +13,7 @@ namespace JctWeatherWidget
             var services = new ServiceCollection();
 
             // Добавляем HttpClient
-            services.AddHttpClient<JctWeatherService>(client =>
+            services.AddHttpClient<IWeatherService, JctWeatherApiService>(client =>
             {
                 client.BaseAddress = new Uri("https://api.weatherapi.com/v1/");
                 client.DefaultRequestHeaders.UserAgent.ParseAdd("JctWeatherWidget/1.0");
@@ -23,7 +23,7 @@ namespace JctWeatherWidget
             services.AddSingleton<MainWindow>();
 
             // Регистрируем WeatherService с HttpClient
-            services.AddSingleton<JctWeatherService>();
+            services.AddSingleton<JctWeatherApiService>();
 
             _serviceProvider = services.BuildServiceProvider();
 

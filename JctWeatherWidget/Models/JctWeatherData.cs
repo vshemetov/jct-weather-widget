@@ -8,6 +8,8 @@ public class JctWeatherData
     public int Humidity { get; set; }
     public int Pressure { get; set; }
 
+    public string IconUrl { get; set; }
+
     public int? ChanceOfRain { get; set; }
     public int? ChanceOfSnow { get; set; }
 

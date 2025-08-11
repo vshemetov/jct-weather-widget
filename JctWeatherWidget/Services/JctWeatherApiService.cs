@@ -7,7 +7,7 @@ using System.Text.Json;
 
 namespace JctWeatherWidget.Services
 {
-    public class JctWeatherService(HttpClient client)
+    public class JctWeatherApiService(HttpClient client) : IWeatherService
     {
         private static readonly string ApiKey = ReadApiKey();
 
@@ -58,7 +58,8 @@ namespace JctWeatherWidget.Services
                     Humidity = current.TryGetProperty("humidity", out var humProp) ? humProp.GetInt32() : 0,
                     Pressure = current.TryGetProperty("pressure_mb", out var pressProp) ? JctDataParseHelper.GetPressureInMmHg(pressProp) : 760,
                     ChanceOfRain = forecastDay.TryGetProperty("daily_chance_of_rain", out var rainProp) ? rainProp.GetInt32() : (int?)null,
-                    ChanceOfSnow = forecastDay.TryGetProperty("daily_chance_of_snow", out var snowProp) ? snowProp.GetInt32() : (int?)null
+                    ChanceOfSnow = forecastDay.TryGetProperty("daily_chance_of_snow", out var snowProp) ? snowProp.GetInt32() : (int?)null,
+                    IconUrl = current.GetProperty("condition").TryGetProperty("icon", out var iconProp) ? "https:" + iconProp.GetString() : null,
                 };
             }
             catch (Exception ex)
