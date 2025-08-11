@@ -53,3 +53,5 @@ CodeCoverage/
 TestResult.xml
 nunit-*.xml
 .vs
+JctWeatherWidget/Properties/PublishProfiles/ClickOnceProfile.pubxml
+JctWeatherWidget/Properties/PublishProfiles/ClickOnceProfile.pubxml.user

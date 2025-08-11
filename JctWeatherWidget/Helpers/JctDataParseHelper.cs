@@ -4,43 +4,50 @@ namespace JctWeatherWidget.Helpers;
 
 public static class JctDataParseHelper
 {
-    // Коэффициент: гПа → мм рт.ст.
-    private const double HpaToMmHgFactor = 0.750062;
-
-    /// <summary>
-    /// Безопасно извлекает double из JsonElement (поддерживает число, строку с числом, null)
-    /// </summary>
-    public static bool TryGetDouble(this JsonElement element, out double value)
+    public static int GetInt32Safe(this JsonElement element, string propertyName, int fallback = 0)
     {
-        value = 0;
+        return element.TryGetProperty(propertyName, out var prop)
+            ? prop.GetInt32Safe(fallback)
+            : fallback;
+    }
 
+    public static double GetDoubleSafe(this JsonElement element, string propertyName, double fallback = 0.0)
+    {
+        return element.TryGetProperty(propertyName, out var prop)
+            ? prop.GetDoubleSafe(fallback)
+            : fallback;
+    }
+
+    public static string GetStringSafe(this JsonElement element, string propertyName, string fallback = "—")
+    {
+        return element.TryGetProperty(propertyName, out var prop)
+            ? prop.GetStringSafe(fallback)
+            : fallback;
+    }
+
+    public static int GetInt32Safe(this JsonElement element, int fallback = 0)
+    {
         return element.ValueKind switch
         {
-            JsonValueKind.Number => element.TryGetDouble(out value),
-            JsonValueKind.String => double.TryParse(element.GetString(), out value),
-            JsonValueKind.Null or JsonValueKind.Undefined => false,
-            _ => double.TryParse(element.GetRawText(), out value)
+            JsonValueKind.Number => element.TryGetInt32(out var i) ? i : fallback,
+            JsonValueKind.String => int.TryParse(element.GetString(), out var i) ? i : fallback,
+            JsonValueKind.Null or JsonValueKind.Undefined => fallback,
+            _ => element.TryGetDouble(out var d) ? (int)d : fallback
         };
     }
 
-    /// <summary>
-    /// Безопасно получает давление в мм рт.ст. из значения pressure_mb (в гПа)
-    /// </summary>
-    public static int GetPressureInMmHg(JsonElement element)
+    public static double GetDoubleSafe(this JsonElement element, double fallback = 0.0)
     {
-        if (!TryGetDouble(element, out var hpa))
-            return 760; // значение по умолчанию
-
-        if (hpa <= 0)
-            return 760;
-
-        return (int)(hpa * HpaToMmHgFactor);
+        return element.ValueKind switch
+        {
+            JsonValueKind.Number => element.TryGetDouble(out var d) ? d : fallback,
+            JsonValueKind.String => double.TryParse(element.GetString(), out var d) ? d : fallback,
+            JsonValueKind.Null or JsonValueKind.Undefined => fallback,
+            _ => fallback
+        };
     }
 
-    /// <summary>
-    /// Безопасно получает строку, возвращая fallback при null или пусто
-    /// </summary>
-    public static string GetString(this JsonElement element, string fallback = "—")
+    public static string GetStringSafe(this JsonElement element, string fallback = "—")
     {
         return element.ValueKind switch
         {
@@ -50,31 +57,34 @@ public static class JctDataParseHelper
         };
     }
 
-    /// <summary>
-    /// Безопасно получает int, возвращая fallback при ошибках
-    /// </summary>
-    public static int GetInt32(this JsonElement element, int fallback = 0)
+    public static DateTime ParseSunPeriodTime(JsonElement localTimeElement, string timeStr)
     {
-        return element.ValueKind switch
-        {
-            JsonValueKind.Number => element.TryGetInt32(out var i) ? i : fallback,
-            JsonValueKind.String => int.TryParse(element.GetString(), out var i) ? i : fallback,
-            JsonValueKind.Null or JsonValueKind.Undefined => fallback,
-            _ => fallback
-        };
-    }
+        if (string.IsNullOrEmpty(timeStr))
+            return DateTime.MinValue;
 
-    /// <summary>
-    /// Безопасно получает double, возвращая fallback при ошибках
-    /// </summary>
-    public static double GetDouble(this JsonElement element, double fallback = 0.0)
-    {
-        return element.ValueKind switch
+        // Парсим AM/PM
+        if (DateTime.TryParseExact(timeStr, "hh:mm tt",
+            System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.None,
+            out var parsedTime))
         {
-            JsonValueKind.Number => element.TryGetDouble(out var d) ? d : fallback,
-            JsonValueKind.String => double.TryParse(element.GetString(), out var d) ? d : fallback,
-            JsonValueKind.Null or JsonValueKind.Undefined => fallback,
-            _ => fallback
-        };
+            var localTimeString = localTimeElement.GetString();
+            if (DateTime.TryParse(localTimeString, out var localNow))
+            {
+                var result = localNow.Date + parsedTime.TimeOfDay;
+
+                // Если восход "вечером" — завтра
+                if (result < localNow && timeStr.Contains("AM"))
+                    result = result.AddDays(1);
+
+                // Если закат "утром" — сегодня
+                if (result < localNow && timeStr.Contains("PM"))
+                    result = result.AddDays(1);
+
+                return result;
+            }
+        }
+
+        return DateTime.MinValue;
     }
 }

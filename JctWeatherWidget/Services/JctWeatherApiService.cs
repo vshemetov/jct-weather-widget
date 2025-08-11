@@ -44,22 +44,33 @@ namespace JctWeatherWidget.Services
                 JsonElement current = root.GetProperty("current");
 
                 // Данные по прогнозу на день
+
                 JsonElement forecastDay = root
                     .GetProperty("forecast")
-                    .GetProperty("forecastday")[0]
-                    .GetProperty("day");
+                    .GetProperty("forecastday")[0];
+
+                string windir = current.GetStringSafe("wind_dir", "—");
 
                 return new JctWeatherData
                 {
-                    Location = location.TryGetProperty("name", out var cityProp) ? cityProp.GetString("Неизвестно") : "Неизвестно",
-                    TemperatureC = current.TryGetProperty("temp_c", out var tempProp) ? tempProp.GetDouble() : 0.0,
-                    Description = current.TryGetProperty("condition", out var condProp) && condProp.TryGetProperty("text", out var textProp) ? 
-                        textProp.GetString() : "—",
-                    Humidity = current.TryGetProperty("humidity", out var humProp) ? humProp.GetInt32() : 0,
-                    Pressure = current.TryGetProperty("pressure_mb", out var pressProp) ? JctDataParseHelper.GetPressureInMmHg(pressProp) : 760,
-                    ChanceOfRain = forecastDay.TryGetProperty("daily_chance_of_rain", out var rainProp) ? rainProp.GetInt32() : (int?)null,
-                    ChanceOfSnow = forecastDay.TryGetProperty("daily_chance_of_snow", out var snowProp) ? snowProp.GetInt32() : (int?)null,
+                    Location = location.GetStringSafe("name", "Неизвестно"),
+                    TemperatureC = current.GetDoubleSafe("temp_c"),
+                    Description = current.TryGetProperty("condition", out var condProp) && condProp.TryGetProperty("text", out var textProp) ? textProp.GetString() : "—",
                     IconUrl = current.GetProperty("condition").TryGetProperty("icon", out var iconProp) ? "https:" + iconProp.GetString() : null,
+
+                    Humidity = current.GetInt32Safe("humidity"),
+                    PressureMb = current.GetInt32Safe("pressure_mb", 1013),
+
+                    ChanceOfRain = forecastDay.GetProperty("day").GetInt32Safe("daily_chance_of_rain"),
+                    ChanceOfSnow = forecastDay.GetProperty("day").GetInt32Safe("daily_chance_of_snow"),
+
+                    WindKph = current.GetDoubleSafe("wind_kph"),
+                    WindDegree = current.GetInt32Safe("wind_degree"),
+                    WindDir = current.GetStringSafe("wind_dir", "—"),
+
+                    Sunrise = JctDataParseHelper.ParseSunPeriodTime(location.GetProperty("localtime"), forecastDay.GetProperty("astro").GetStringSafe("sunrise", "—")),
+
+                    Sunset = JctDataParseHelper.ParseSunPeriodTime(location.GetProperty("localtime"), forecastDay.GetProperty("astro").GetStringSafe("sunset", "—"))
                 };
             }
             catch (Exception ex)
