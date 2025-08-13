@@ -1,9 +1,12 @@
 ﻿using JctWeatherWidget.Helpers;
+using JctWeatherWidget.Log;
+using JctWeatherWidget.Log.Extensions;
 using JctWeatherWidget.Models;
 using JctWeatherWidget.Services;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 
@@ -16,7 +19,10 @@ namespace JctWeatherWidget
         private static readonly TimeSpan UpdateInterval = TimeSpan.FromMinutes(15);
 
         private readonly IWeatherService _weatherService;
+        private readonly IJctLogger _logger;
+
         private DispatcherTimer _updateTimer;
+        private bool _isTimerInitialized = false;
 
         public MainWindow()
         {
@@ -30,7 +36,7 @@ namespace JctWeatherWidget
             var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
             if (hwnd == IntPtr.Zero)
             {
-                this.SourceInitialized += (s, e) =>
+                SourceInitialized += (s, e) =>
                 {
                     hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
                     SetWindowExTransparent(hwnd);
@@ -42,7 +48,15 @@ namespace JctWeatherWidget
             }
 
             _weatherService = (App.Current as App).GetService<IWeatherService>();
+            _logger = (App.Current as App).GetService<IJctLogger>();
         }
+
+        protected override void OnClosed(EventArgs e)
+        {
+            StopTimer();
+            base.OnClosed(e);
+        }
+
 
         private void SetWindowExTransparent(IntPtr hwnd)
         {
@@ -77,10 +91,14 @@ namespace JctWeatherWidget
                 var (lat, lon) = coords.Value;
                 JctWeatherData weather = await _weatherService.GetWeatherFromCoordinatesAsync(lat, lon);
 
-                UpdateUI(weather);
-                StartTimer();
+                await UpdateUIAsync(weather);
+                InitializeTimer();
 
+                // Очистить строку для ошибок
                 SetErrText(string.Empty);
+
+                // Лог успешной загрузки
+                _logger.LogInfoWithIndent($"Успешная загрузка погодных данных:", weather.ToString());
             }
             catch (Exception ex) when (attempts < MaxRetryAttempts)
             {
@@ -92,12 +110,14 @@ namespace JctWeatherWidget
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Не удалось загрузить погоду: {ex.Message}");
+                string warnMessage = $"Не удалось загрузить погоду: {ex.Message}";
+                _logger.LogWarning(warnMessage);
+
                 SetErrText(string.Empty);
             }
         }
 
-        private void UpdateUI(JctWeatherData w)
+        private async Task UpdateUIAsync(JctWeatherData w)
         {
             LocationBlock.Text = w.Location;
             TempBlock.Text = $"{(w.TemperatureC >= 0 ? "+" : "")}{w.TemperatureC:F0}°C  {w.Description}";
@@ -109,17 +129,41 @@ namespace JctWeatherWidget
             WindSunBlock.Visibility = Visibility.Visible;
 
             UpdateDate();
-            SetWeatherIcon(w.IconUrl);
+            await SetWeatherIconAsync(w.IconUrl);
         }
 
-        private void StartTimer()
+        private void InitializeTimer()
         {
+            if (_isTimerInitialized) return;
+
             _updateTimer = new DispatcherTimer
             {
                 Interval = UpdateInterval
             };
-            _updateTimer.Tick += async (s, e) => await LoadWeatherWithRetry();
+            _updateTimer.Tick += async (s, e) =>
+            {
+                try
+                {
+                    await LoadWeatherWithRetry();
+                }
+                catch (Exception ex)
+                {
+                    SetErrText($"Ошибка обновления данных: {ex.Message}");
+                }
+            };
             _updateTimer.Start();
+            _isTimerInitialized = true;
+        }
+
+        private void StopTimer()
+        {
+            if (_updateTimer != null)
+            {
+                _updateTimer.Stop();
+                _updateTimer.Tick -= async (s, e) => await LoadWeatherWithRetry();
+                _updateTimer = null;
+            }
+            _isTimerInitialized = false;
         }
 
         private void Window_MouseDown(object sender, MouseButtonEventArgs e)
@@ -146,7 +190,7 @@ namespace JctWeatherWidget
             DateBlock.Text = $"{capitalizedDayName}, {dayMonth}";
         }
 
-        private void SetWeatherIcon(string iconUrl)
+        private async Task SetWeatherIconAsync(string iconUrl)
         {
             if (string.IsNullOrEmpty(iconUrl))
             {
@@ -154,39 +198,70 @@ namespace JctWeatherWidget
                 return;
             }
 
+            BitmapImage mainWeatherIconBitmap = new();
+
+            EventHandler downloadIconCompleted = null;
+            EventHandler<ExceptionEventArgs> downloadIconFailed = null;
+
             try
             {
-                var bitmap = new BitmapImage();
-                bitmap.BeginInit();
-                bitmap.UriSource = new Uri(iconUrl);
-                bitmap.CacheOption = BitmapCacheOption.OnLoad;
-                bitmap.EndInit();
+                var completion = new TaskCompletionSource<bool>();
 
-                if (bitmap.IsDownloading)
+                downloadIconCompleted = (sender, e) =>
                 {
-                    bitmap.DownloadCompleted += (sender, e) =>
+                    try
                     {
-                        WeatherIcon.Source = bitmap.ApplyGrayscale();
+                        WeatherIcon.Source = mainWeatherIconBitmap.ApplyGrayscale();
                         WeatherIcon.Visibility = Visibility.Visible;
-                    };
-                }
-                else
-                {
-                    WeatherIcon.Source = bitmap.ApplyGrayscale();
-                    WeatherIcon.Visibility = Visibility.Visible;
-                }
+                        completion.SetResult(true);
+                    }
+                    catch(Exception ex)
+                    {
+                        SetErrText($"Ошибка применения фильтра иконки: {ex.Message}");
+                        WeatherIcon.Visibility = Visibility.Collapsed;
+                        completion.SetException(ex);
+                    }
+                };
 
+                downloadIconFailed = (sender, e) => {
+                    SetErrText("Не удалось загрузить иконку погоды");
+                    WeatherIcon.Visibility = Visibility.Collapsed;
+                    completion.SetException(e.ErrorException ?? new Exception("Ошибка загрузки иконки"));
+                };
 
+                mainWeatherIconBitmap.DownloadCompleted += downloadIconCompleted;
+                mainWeatherIconBitmap.DownloadFailed += downloadIconFailed;
+
+                mainWeatherIconBitmap.BeginInit();
+                mainWeatherIconBitmap.UriSource = new Uri(iconUrl);
+                mainWeatherIconBitmap.CacheOption = BitmapCacheOption.OnLoad;
+                mainWeatherIconBitmap.EndInit();
+
+                using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                await Task.WhenAny(completion.Task, Task.Delay(TimeSpan.FromSeconds(10), cancellation.Token));
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
                 WeatherIcon.Visibility = Visibility.Collapsed;
-                SetErrText(ex.Message);
+                SetErrText($"Ошибка иконки: {ex.Message}");
+            }
+            finally
+            {
+                if (downloadIconCompleted != null)
+                    mainWeatherIconBitmap.DownloadCompleted -= downloadIconCompleted;
+
+                if (downloadIconFailed != null)
+                    mainWeatherIconBitmap.DownloadFailed -= downloadIconFailed;
             }
         }
 
         private void SetErrText(string errText)
         {
+            if (!string.IsNullOrEmpty(errText))
+            {
+                _logger.LogError(errText);
+            }
+
             ErrorBlock.Text = errText;
             ErrorBlock.Visibility = string.IsNullOrEmpty(errText) ? Visibility.Collapsed : Visibility.Visible;
         }

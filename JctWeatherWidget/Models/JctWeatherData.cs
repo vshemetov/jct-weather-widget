@@ -78,6 +78,6 @@ public class JctWeatherData
     public override string ToString() =>
             $"{Location}\n" +
             $"{(TemperatureC >= 0 ? "+" : "")}{TemperatureC:F0}°C  {Description}\n" +
-            $"Вл: {Humidity}%  Давл: {PressureMmHg} мм  {PrecipitationWarning}" +
-            $"Ветер: {WindMps} м/с ({WindDir})";
+            $"Вл: {Humidity}%  Давл: {PressureMmHg} мм  {PrecipitationWarning}\n" +
+            $"Восх: {Sunrise:HH:mm}  Закат: {Sunset:HH:mm}  {(WindKph > 0 ? $"Ветер: {WindMps} м/с {WinDirRu}" : "Ветер: —")}";
 }
